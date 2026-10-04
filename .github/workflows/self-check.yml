@@ -1,0 +1,17 @@
+# Runs the baseline against this repo by relative path, so a PR that breaks
+# security-baseline.yml fails its own check before any caller can pin it.
+
+name: self-check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  security-baseline:
+    uses: ./.github/workflows/security-baseline.yml
