@@ -1,0 +1,6 @@
+# actionlint 1.7.12 does not know github.job_workflow_sha, which bump-pin.yml
+# needs to check out the script at the SHA the caller pinned.
+paths:
+  .github/workflows/bump-pin.yml:
+    ignore:
+      - 'property "job_workflow_sha" is not defined'
