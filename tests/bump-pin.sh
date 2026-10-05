@@ -59,10 +59,6 @@ check "Scenario: A pre-release tag is not bumped (stdout)" "skipped" "$out"
 check "Scenario: A pre-release tag is not bumped (exit)" "0" "$rc"
 check "Scenario: A pre-release tag is not bumped (file)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
 
-fixture
-run life_manager_version 'v1&2|x'
-check "Scenario: The line has quotes, a comment or special characters (literal tag)" "life_manager_version: v1&2|x" "$(sed -n 2p "$dir/vars.yml")"
-
 printf '%s\n' '---' 'life_manager_version: v0.2.0  # note' 'life_manager_port: 3000' >"$dir/vars.yml"
 run life_manager_version v0.3.0
 check "Scenario: The line has quotes, a comment or special characters (trailing comment kept)" "life_manager_version: v0.3.0  # note" "$(sed -n 2p "$dir/vars.yml")"
@@ -108,5 +104,35 @@ command rm -f "$dir/vars.yml"
 run life_manager_version v0.3.0
 check "Scenario: The file is not on main yet (exit)" "1" "$rc"
 check "Scenario: The file is not on main yet (stderr)" "bump-pin: $dir/vars.yml: file not found" "$err"
+
+fixture
+cp "$dir/vars.yml" "$dir/before.yml"
+run life_manager_version v0.1.9
+check "Scenario: A tag older than the pinned version is not bumped (stdout)" "skipped: v0.1.9 is older than the pinned v0.2.0" "$out"
+check "Scenario: A tag older than the pinned version is not bumped (exit)" "0" "$rc"
+check "Scenario: A tag older than the pinned version is not bumped (file)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
+run life_manager_version v0.1.10
+check "Scenario: A tag older than the pinned version is not bumped (numeric, not lexical: stdout)" "skipped: v0.1.10 is older than the pinned v0.2.0" "$out"
+printf '%s\n' '---' 'life_manager_version: v0.9.0' >"$dir/vars.yml"
+run life_manager_version v0.10.0
+check "Scenario: A tag older than the pinned version is not bumped (numeric, not lexical: higher bumps)" "changed" "$out"
+printf '%s\n' '---' 'life_manager_version: "v1.2.3"  # note' >"$dir/vars.yml"
+run life_manager_version 1.2.2
+check "Scenario: A tag older than the pinned version is not bumped (quoted pin, tag without v)" "skipped: 1.2.2 is older than the pinned v1.2.3" "$out"
+run life_manager_version 1.2.4
+check "Scenario: A tag older than the pinned version is not bumped (tag without v, higher)" "changed" "$out"
+
+for pair in 'v0.2.0|vnext' 'main|v0.3.0' 'v0.2|v0.3.0' 'v0.2.0|v0.3' 'v0.2.0|' 'v0.2.0|v1.x.0' 'v0.2.0|v1&2|x'; do
+  pin=${pair%%|*} tag=${pair#*|}
+  printf '%s\n' '---' "life_manager_version: $pin" >"$dir/vars.yml"
+  cp "$dir/vars.yml" "$dir/before.yml"
+  run life_manager_version "$tag"
+  bad=$tag
+  [[ $pin =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || bad=$pin
+  check "Scenario: A version that cannot be compared fails ($pin -> $tag: exit)" "1" "$rc"
+  check "Scenario: A version that cannot be compared fails ($pin -> $tag: stdout)" "" "$out"
+  check "Scenario: A version that cannot be compared fails ($pin -> $tag: stderr)" "bump-pin: $dir/vars.yml: life_manager_version: $bad is not a version (vMAJOR.MINOR.PATCH)" "$err"
+  check "Scenario: A version that cannot be compared fails ($pin -> $tag: untouched)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
+done
 
 exit "$fail"

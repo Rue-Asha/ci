@@ -38,10 +38,15 @@ Dependabot does not bump those; update version and checksum together.
 version variable in a target repo (default `Rue-Asha/Homelab-Managment`) to a
 release tag, pushes `bump/<variable>-<tag>`, opens a PR titled
 `chore(<app>): bump to <tag>`, enables squash auto-merge on it and closes older
-open `bump/<variable>-*` PRs. The edit is made by `scripts/bump-pin.sh`, tested
+open `bump/<variable>-*` PRs whose tag is older (newer ones and branches with an
+unparseable tag are left alone). The edit is made by `scripts/bump-pin.sh`, tested
 by `tests/bump-pin.sh`; the branch, PR and auto-merge steps are in
-`scripts/ensure-bump-pr.sh`, tested by `tests/ensure-bump-pr.sh`. A pre-release
-tag (`v1.2.3-rc1`), a value that already equals the tag, and a PR for the tag
+`scripts/ensure-bump-pr.sh`, tested by `tests/ensure-bump-pr.sh`. The pin only moves
+upward: a tag older than the pinned version prints `skipped: <tag> is older than
+the pinned <pin>`, and a tag or pin that is not `vMAJOR.MINOR.PATCH` fails the
+job. Jobs for the same variable run one at a time (`concurrency` group
+`bump-<variable>`, queued, never cancelled). A pre-release
+tag (`v1.2.3-rc1`), an older tag, a value that already equals the tag, and a PR for the tag
 that is merged or already set to auto-merge end green without changes. A run
 that stopped half-way is completed by a re-run (missing PR or auto-merge is
 added); a missing file or variable line fails the job.

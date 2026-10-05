@@ -128,4 +128,13 @@ run
 check "Scenario: An older bump PR is still open (closes only the older one)" "1" "$(grep -c '^gh pr close' <<<"$calls")"
 check "Scenario: An older bump PR is still open (which)" "1" "$(grep -c '^gh pr close 3 .*--comment Superseded by https://github.test/pr/9' <<<"$calls")"
 
+setup
+echo '[{"number":8,"headRefName":"bump/life_manager_version-v0.3.1"},{"number":9,"headRefName":"bump/life_manager_version-v0.3.0"},{"number":3,"headRefName":"bump/life_manager_version-v0.2.9"},{"number":2,"headRefName":"bump/life_manager_version-v0.10.0"},{"number":7,"headRefName":"bump/life_manager_version-nightly"},{"number":6,"headRefName":"bump/life_manager_version-v0.3.0-rc1"}]' >"$STATE/open.json"
+run
+check "Scenario: Only older bump PRs are superseded (exit)" "0" "$rc"
+check "Scenario: Only older bump PRs are superseded (closes only the older, numerically)" "1" "$(grep -c '^gh pr close' <<<"$calls")"
+check "Scenario: Only older bump PRs are superseded (older closed)" "1" "$(grep -c '^gh pr close 3 ' <<<"$calls")"
+check "Scenario: Only older bump PRs are superseded (newer left alone)" "0" "$(grep -cE '^gh pr close (8|2) ' <<<"$calls")"
+check "Scenario: Only older bump PRs are superseded (unparseable branch left alone)" "0" "$(grep -cE '^gh pr close (7|6) ' <<<"$calls")"
+
 exit "$fail"

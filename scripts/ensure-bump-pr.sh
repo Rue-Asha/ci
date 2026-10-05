@@ -14,11 +14,27 @@ pr=$(gh pr list --repo "$TARGET_REPO" --head "$branch" --state all --json number
   jq -r '.[0] // empty | "\(.number) \(.state) \(.autoMergeRequest != null)"')
 read -r number state automerge <<<"$pr"
 
+# Only a branch whose tag parses as a version and is lower than ours is closed.
+version_re='^v?([0-9]+)\.([0-9]+)\.([0-9]+)$'
+older_than_current() {
+  local a b i
+  [[ $TAG =~ $version_re ]] || return 1
+  b=("${BASH_REMATCH[@]:1}")
+  [[ $1 =~ $version_re ]] || return 1
+  a=("${BASH_REMATCH[@]:1}")
+  for i in 0 1 2; do
+    ((10#${a[i]} < 10#${b[i]})) && return 0
+    ((10#${a[i]} > 10#${b[i]})) && return 1
+  done
+  return 1
+}
+
 supersede() {
   gh pr list --repo "$TARGET_REPO" --state open --json number,headRefName |
     jq -r --arg prefix "bump/${VARIABLE}-" --arg branch "$branch" \
-      '.[] | select((.headRefName | startswith($prefix)) and .headRefName != $branch) | .number' |
-    while read -r old; do
+      '.[] | select((.headRefName | startswith($prefix)) and .headRefName != $branch) | "\(.number) \(.headRefName | ltrimstr($prefix))"' |
+    while read -r old old_tag; do
+      older_than_current "$old_tag" || continue
       gh pr close "$old" --repo "$TARGET_REPO" --comment "Superseded by ${1}"
     done
 }

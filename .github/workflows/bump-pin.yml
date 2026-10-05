@@ -59,6 +59,9 @@ jobs:
   bump:
     name: bump
     runs-on: ubuntu-24.04
+    concurrency:
+      group: bump-${{ inputs.variable }}
+      cancel-in-progress: false
     steps:
       - name: Split the target repo
         id: target
@@ -106,6 +109,6 @@ jobs:
         run: |
           result=$(bash ../ci/scripts/bump-pin.sh "$FILE" "$VARIABLE" "$TAG")
           echo "bump-pin: $result"
-          [ "$result" = changed ] || exit 0
+          [ "$result" = changed ] || exit 0  # unchanged, skipped (pre-release) and "skipped: <tag> is older ..." open no PR
 
           bash ../ci/scripts/ensure-bump-pr.sh

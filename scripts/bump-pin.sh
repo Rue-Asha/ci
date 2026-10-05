@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Usage: bump-pin.sh <file> <variable> <tag>
-# Sets "<variable>: <tag>" in <file> (quotes and trailing comment kept) and prints changed, unchanged or skipped.
+# Sets "<variable>: <tag>" in <file> (quotes and trailing comment kept) and prints changed, unchanged or
+# skipped (pre-release, or older than the pinned version) and never moves the pin down.
 
 set -euo pipefail
 
@@ -41,6 +42,26 @@ if ! perl -ne "next unless /^\\Q\$ENV{BUMP_VAR}\\E:\\h/; \$bad = 1 unless /$vali
   echo "bump-pin: $file: $variable has no plain or quoted value" >&2
   exit 1
 fi
+
+# The pin only moves upward: compare as vMAJOR.MINOR.PATCH, numerically.
+pinned=$(perl -ne 'if (/^\Q$ENV{BUMP_VAR}\E:\h+(["\x27]?)([^"\x27\s#]+)\1/) { print $2; exit }' "$file")
+version_re='^v?([0-9]+)\.([0-9]+)\.([0-9]+)$'
+for v in "$pinned" "$tag"; do
+  if [[ ! $v =~ $version_re ]]; then
+    echo "bump-pin: $file: $variable: $v is not a version (vMAJOR.MINOR.PATCH)" >&2
+    exit 1
+  fi
+done
+[[ $pinned =~ $version_re ]] && pin_parts=("${BASH_REMATCH[@]:1}")
+[[ $tag =~ $version_re ]] && tag_parts=("${BASH_REMATCH[@]:1}")
+for i in 0 1 2; do
+  if ((10#${tag_parts[i]} < 10#${pin_parts[i]})); then
+    echo "skipped: $tag is older than the pinned $pinned"
+    exit 0
+  elif ((10#${tag_parts[i]} > 10#${pin_parts[i]})); then
+    break
+  fi
+done
 
 new=$(mktemp)
 trap 'command rm -f "$new"' EXIT
