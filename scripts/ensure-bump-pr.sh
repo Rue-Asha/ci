@@ -23,7 +23,7 @@ branch="bump/${VARIABLE}-${TAG}"
 title="chore(${APP}): bump to ${TAG}"
 
 pr=$(gh pr list --repo "$TARGET_REPO" --head "$branch" --state all --json number,state,autoMergeRequest |
-  jq -r '.[0] // empty | "\(.number) \(.state) \(.autoMergeRequest != null)"')
+  jq -r '(map(select(.state == "OPEN")) + map(select(.state == "MERGED")) + .)[0] // empty | "\(.number) \(.state) \(.autoMergeRequest != null)"')
 read -r number state automerge <<<"$pr"
 
 # Only a branch whose tag parses as a version and is lower than ours is closed.

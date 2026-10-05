@@ -171,4 +171,17 @@ run
 check "Scenario: Only older bump PRs are superseded (very long number is newer, left alone)" "0" "$(grep -c '^gh pr close 8 ' <<<"$calls")"
 check "Scenario: Only older bump PRs are superseded (very long number: older still closed)" "1" "$(grep -c '^gh pr close 3 ' <<<"$calls")"
 
+setup
+echo '[{"number":2,"state":"CLOSED","autoMergeRequest":null},{"number":4,"state":"OPEN","autoMergeRequest":null}]' >"$STATE/head.json"
+git -C "$dir/target" push -q origin HEAD:refs/heads/bump/life_manager_version-v0.3.0
+run
+check "Scenario: Branch or PR for the tag already exists (closed and open PR share the head: open one is used)" "1" "$(grep -c '^gh pr merge 4 .*--auto --squash' <<<"$calls")"
+check "Scenario: Branch or PR for the tag already exists (closed and open PR share the head: no create)" "0" "$(grep -c '^gh pr create' <<<"$calls")"
+
+setup
+echo '[{"number":2,"state":"CLOSED","autoMergeRequest":null},{"number":4,"state":"MERGED","autoMergeRequest":null}]' >"$STATE/head.json"
+echo '[{"number":3,"headRefName":"bump/life_manager_version-v0.2.9"}]' >"$STATE/open.json"
+run
+check "Scenario: Branch or PR for the tag already exists (closed and merged PR share the head: merged one is used)" "1" "$(grep -c '^gh pr close 3 .*--comment Superseded by 4' <<<"$calls")"
+
 exit "$fail"
