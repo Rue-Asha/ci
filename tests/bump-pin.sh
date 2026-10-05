@@ -59,4 +59,35 @@ check "Scenario: A pre-release tag is not bumped (stdout)" "skipped" "$out"
 check "Scenario: A pre-release tag is not bumped (exit)" "0" "$rc"
 check "Scenario: A pre-release tag is not bumped (file)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
 
+fixture
+run life_manager_version 'v1&2|x'
+check "Scenario: A new tag is bumped (literal tag)" "life_manager_version: v1&2|x" "$(sed -n 2p "$dir/vars.yml")"
+
+printf '%s\n' '---' 'life_manager_version: v0.2.0  # note' 'life_manager_port: 3000' >"$dir/vars.yml"
+run life_manager_version v0.3.0
+check "Scenario: A new tag is bumped (trailing comment kept)" "life_manager_version: v0.3.0  # note" "$(sed -n 2p "$dir/vars.yml")"
+run life_manager_version v0.3.0
+check "Scenario: The value already equals the tag (trailing comment)" "unchanged" "$out"
+
+printf '%s\n' '---' 'life_manager_version: "v0.2.0"' >"$dir/vars.yml"
+run life_manager_version v0.3.0
+check "Scenario: A new tag is bumped (double quotes kept)" 'life_manager_version: "v0.3.0"' "$(sed -n 2p "$dir/vars.yml")"
+run life_manager_version v0.3.0
+check "Scenario: The value already equals the tag (quoted)" "unchanged" "$out"
+
+printf '%s\n' '---' "life_manager_version: 'v0.2.0'" >"$dir/vars.yml"
+run life_manager_version v0.3.0
+check "Scenario: A new tag is bumped (single quotes kept)" "life_manager_version: 'v0.3.0'" "$(sed -n 2p "$dir/vars.yml")"
+
+fixture
+run life_manager_version v1.2.3-rc1
+run life_manager_version v0.2.0
+check "Scenario: The value already equals the tag (stdout, 2nd)" "unchanged" "$out"
+
+fixture
+command rm -f "$dir/vars.yml"
+run life_manager_version v0.3.0
+check "Scenario: The file is not on main yet (exit)" "1" "$rc"
+check "Scenario: The file is not on main yet (stderr)" "bump-pin: $dir/vars.yml: file not found" "$err"
+
 exit "$fail"
