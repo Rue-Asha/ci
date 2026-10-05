@@ -27,7 +27,15 @@ cat >"$dir/bin/gh" <<'STUB'
 echo "gh $*" >>"$STATE/calls"
 case "$1 $2" in
 "pr list")
-  if [[ " $* " == *" --head "* ]]; then cat "$STATE/head.json"; else cat "$STATE/open.json"; fi ;;
+  args=" $* "
+  if [[ $args == *" --head "* ]]; then
+    [[ $args == *" --head bump/life_manager_version-v0.3.0 "* && $args == *" --state all "* &&
+      $args == *" --json number,state,autoMergeRequest"* ]] || { echo "stub: bad head query: $*" >&2; exit 1; }
+    cat "$STATE/head.json"
+  else
+    [[ $args == *" --state open "* && $args == *" --json number,headRefName"* ]] || { echo "stub: bad open query: $*" >&2; exit 1; }
+    cat "$STATE/open.json"
+  fi ;;
 "pr create")
   [ -z "${FAIL_CREATE:-}" ] || { echo "HTTP 502" >&2; exit 1; }
   echo https://github.test/pr/9 ;;
@@ -42,6 +50,8 @@ setup() {
   echo '[]' >"$STATE/head.json"
   echo '[]' >"$STATE/open.json"
   git init -q --bare -b main "$dir/origin.git"
+  printf '#!/bin/sh\ncat >>"$STATE/pushes"\n' >"$dir/origin.git/hooks/pre-receive"
+  chmod +x "$dir/origin.git/hooks/pre-receive"
   git clone -q "$dir/origin.git" "$dir/target" 2>/dev/null
   (
     cd "$dir/target" || exit 1
@@ -58,6 +68,7 @@ run() {
   rc=$?
   calls=$(cat "$STATE/calls" 2>/dev/null || true)
 }
+pushes() { grep -c refs/heads/bump/ "$STATE/pushes" 2>/dev/null || true; }
 branch_on_origin() { git -C "$dir/origin.git" rev-parse --verify -q refs/heads/bump/life_manager_version-v0.3.0 >/dev/null && echo yes || echo no; }
 
 setup
@@ -65,6 +76,7 @@ run
 check "Scenario: A new tag is bumped (pushes branch)" "yes" "$(branch_on_origin)"
 check "Scenario: A new tag is bumped (opens PR with title)" "1" "$(grep -c '^gh pr create .*--title chore(life-manager): bump to v0.3.0' <<<"$calls")"
 check "Scenario: A new tag is bumped (auto-merge)" "1" "$(grep -c '^gh pr merge https://github.test/pr/9 .*--auto --squash' <<<"$calls")"
+check "Scenario: A new tag is bumped (pushed commit holds the bumped line)" "life_manager_version: v0.3.0" "$(git -C "$dir/origin.git" show bump/life_manager_version-v0.3.0:vars.yml)"
 check "Scenario: A new tag is bumped (commit message)" "chore(life-manager): bump to v0.3.0" "$(git -C "$dir/origin.git" log -1 --format=%s bump/life_manager_version-v0.3.0)"
 
 setup
@@ -81,13 +93,24 @@ check "Scenario: Branch or PR for the tag already exists (merged)" "0" "$(grep -
 check "Scenario: Branch or PR for the tag already exists (merged, no push)" "no" "$(branch_on_origin)"
 
 setup
+echo '[{"number":4,"state":"MERGED","autoMergeRequest":null}]' >"$STATE/head.json"
+echo '[{"number":3,"headRefName":"bump/life_manager_version-v0.2.9"},{"number":4,"headRefName":"bump/life_manager_version-v0.3.0"}]' >"$STATE/open.json"
+run
+check "Scenario: An older bump PR is still open (merged current PR: exit)" "0" "$rc"
+check "Scenario: An older bump PR is still open (merged current PR: older closed)" "1" "$(grep -c '^gh pr close 3 .*--comment Superseded by 4' <<<"$calls")"
+check "Scenario: An older bump PR is still open (merged current PR: only the older)" "1" "$(grep -c '^gh pr close' <<<"$calls")"
+
+setup
 FAIL_CREATE=1 run
 check "Scenario: A previous run stopped before the PR or auto-merge (create fails: exit)" "1" "$rc"
 check "Scenario: A previous run stopped before the PR or auto-merge (create fails: branch pushed)" "yes" "$(branch_on_origin)"
-git -C "$dir/target" switch -q main
+check "Scenario: A previous run stopped before the PR or auto-merge (create fails: one push)" "1" "$(pushes)"
+command rm -rf "$dir/target"
+git clone -q "$dir/origin.git" "$dir/target" 2>/dev/null
 echo 'life_manager_version: v0.3.0' >"$dir/target/vars.yml"
 : >"$STATE/calls"
 run
+check "Scenario: A previous run stopped before the PR or auto-merge (rerun: no second push)" "1" "$(pushes)"
 check "Scenario: A previous run stopped before the PR or auto-merge (rerun: exit)" "0" "$rc"
 check "Scenario: A previous run stopped before the PR or auto-merge (rerun: PR created, branch not recreated)" "1" "$(grep -c '^gh pr create' <<<"$calls")"
 check "Scenario: A previous run stopped before the PR or auto-merge (rerun: auto-merge)" "1" "$(grep -c '^gh pr merge' <<<"$calls")"

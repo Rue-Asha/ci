@@ -14,6 +14,20 @@ pr=$(gh pr list --repo "$TARGET_REPO" --head "$branch" --state all --json number
   jq -r '.[0] // empty | "\(.number) \(.state) \(.autoMergeRequest != null)"')
 read -r number state automerge <<<"$pr"
 
+supersede() {
+  gh pr list --repo "$TARGET_REPO" --state open --json number,headRefName |
+    jq -r --arg prefix "bump/${VARIABLE}-" --arg branch "$branch" \
+      '.[] | select((.headRefName | startswith($prefix)) and .headRefName != $branch) | .number' |
+    while read -r old; do
+      gh pr close "$old" --repo "$TARGET_REPO" --comment "Superseded by ${1}"
+    done
+}
+
+# Runs on every invocation: closing the older PR may have failed in an earlier run.
+if [ "${state:-}" = MERGED ]; then
+  supersede "$number"
+fi
+
 if [ "${state:-}" = MERGED ] || [ "${state:-}" = CLOSED ]; then
   echo "bump-pin: PR $number for $branch is ${state,,}, nothing to do"
   exit 0
@@ -40,9 +54,4 @@ else
   echo "bump-pin: PR $number for $branch already set to auto-merge"
 fi
 
-gh pr list --repo "$TARGET_REPO" --state open --json number,headRefName |
-  jq -r --arg prefix "bump/${VARIABLE}-" --arg branch "$branch" \
-    '.[] | select((.headRefName | startswith($prefix)) and .headRefName != $branch) | .number' |
-  while read -r old; do
-    gh pr close "$old" --repo "$TARGET_REPO" --comment "Superseded by ${number}"
-  done
+supersede "$number"

@@ -76,6 +76,8 @@ jobs:
           private-key: ${{ secrets.app_private_key }}
           owner: ${{ steps.target.outputs.owner }}
           repositories: ${{ steps.target.outputs.name }}
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Check out the target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
