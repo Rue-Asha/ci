@@ -1,0 +1,131 @@
+# Bumps a pinned version in Homelab-Managment to a release tag and opens an
+# auto-merging PR for it.
+#
+# Call it pinned to a full commit SHA, from a job that runs after publish:
+#
+#   bump:
+#     needs: publish
+#     permissions:
+#       contents: read
+#     uses: Rue-Asha/ci/.github/workflows/bump-pin.yml@<sha> # vX.Y.Z
+#     with:
+#       app: life-manager
+#       host_vars_path: ansible/inventory/host_vars/life-manager01/vars.yml
+#       variable: life_manager_version
+#       tag: ${{ github.ref_name }}
+#     secrets:
+#       app_id: ${{ secrets.HOMELAB_BUMP_APP_ID }}
+#       app_private_key: ${{ secrets.HOMELAB_BUMP_APP_KEY }}
+#
+# The job name `bump` is part of the interface. The PR is opened with a GitHub
+# App token so the target's CI runs on it; there is deliberately no fallback to
+# GITHUB_TOKEN, a failed token step fails the job.
+
+name: bump-pin
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        description: App name for the PR title, e.g. life-manager
+        type: string
+        required: true
+      host_vars_path:
+        description: File to edit, relative to the target repo root
+        type: string
+        required: true
+      variable:
+        description: Variable to set, e.g. life_manager_version
+        type: string
+        required: true
+      tag:
+        description: Release tag to pin, e.g. v0.3.0
+        type: string
+        required: true
+      target_repo:
+        type: string
+        default: Rue-Asha/Homelab-Managment
+    secrets:
+      app_id:
+        required: true
+      app_private_key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    name: bump
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Split the target repo
+        id: target
+        env:
+          TARGET_REPO: ${{ inputs.target_repo }}
+        run: |
+          echo "owner=${TARGET_REPO%%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${TARGET_REPO#*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create the App token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
+
+      - name: Check out the target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.target_repo }}
+          token: ${{ steps.token.outputs.token }}
+          path: target
+
+      - name: Check out the bump script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Rue-Asha/ci
+          ref: ${{ github.job_workflow_sha }}
+          path: ci
+          persist-credentials: false
+
+      - name: Bump the pin and open the PR
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPO: ${{ inputs.target_repo }}
+          APP: ${{ inputs.app }}
+          FILE: ${{ inputs.host_vars_path }}
+          VARIABLE: ${{ inputs.variable }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          result=$(bash ../ci/scripts/bump-pin.sh "$FILE" "$VARIABLE" "$TAG")
+          echo "bump-pin: $result"
+          [ "$result" = changed ] || exit 0
+
+          branch="bump/${VARIABLE}-${TAG}"
+          title="chore(${APP}): bump to ${TAG}"
+
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null ||
+            [ -n "$(gh pr list --repo "$TARGET_REPO" --head "$branch" --state all --json number --jq '.[].number')" ]; then
+            echo "bump-pin: $branch already exists, nothing to do"
+            exit 0
+          fi
+
+          git config user.name "homelab-bump[bot]"
+          git config user.email "homelab-bump[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "$title"
+          git push origin "$branch"
+
+          url=$(gh pr create --repo "$TARGET_REPO" --head "$branch" --title "$title" \
+            --body "Automated bump of \`${VARIABLE}\` to \`${TAG}\`, opened by the release of ${APP}.")
+          gh pr merge "$url" --repo "$TARGET_REPO" --auto --squash
+
+          gh pr list --repo "$TARGET_REPO" --state open --json number,headRefName \
+            --jq ".[] | select(.headRefName | startswith(\"bump/${VARIABLE}-\") and . != \"${branch}\") | .number" |
+            while read -r old; do
+              gh pr close "$old" --repo "$TARGET_REPO" --comment "Superseded by ${url}"
+            done
