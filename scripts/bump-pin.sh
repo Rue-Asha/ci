@@ -7,6 +7,9 @@ set -euo pipefail
 
 file=$1 variable=$2 tag=$3
 
+# shellcheck source=version.sh
+source "$(dirname "${BASH_SOURCE[0]}")/version.sh"
+
 # The tag becomes a plain YAML scalar, so nothing that YAML would read as
 # a comment, quote, flow indicator or key separator may be in it.
 if [[ $tag == *[[:space:]\#\"\'{}\[\],\\]* || $tag == *: ]]; then
@@ -45,23 +48,16 @@ fi
 
 # The pin only moves upward: compare as vMAJOR.MINOR.PATCH, numerically.
 pinned=$(perl -ne 'if (/^\Q$ENV{BUMP_VAR}\E:\h+(["\x27]?)([^"\x27\s#]+)\1/) { print $2; exit }' "$file")
-version_re='^v?([0-9]+)\.([0-9]+)\.([0-9]+)$'
 for v in "$pinned" "$tag"; do
   if [[ ! $v =~ $version_re ]]; then
     echo "bump-pin: $file: $variable: $v is not a version (vMAJOR.MINOR.PATCH)" >&2
     exit 1
   fi
 done
-[[ $pinned =~ $version_re ]] && pin_parts=("${BASH_REMATCH[@]:1}")
-[[ $tag =~ $version_re ]] && tag_parts=("${BASH_REMATCH[@]:1}")
-for i in 0 1 2; do
-  if ((10#${tag_parts[i]} < 10#${pin_parts[i]})); then
-    echo "skipped: $tag is older than the pinned $pinned"
-    exit 0
-  elif ((10#${tag_parts[i]} > 10#${pin_parts[i]})); then
-    break
-  fi
-done
+if version_older "$tag" "$pinned"; then
+  echo "skipped: $tag is older than the pinned $pinned"
+  exit 0
+fi
 
 new=$(mktemp)
 trap 'command rm -f "$new"' EXIT

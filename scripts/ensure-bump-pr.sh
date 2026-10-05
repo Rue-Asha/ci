@@ -10,6 +10,9 @@
 
 set -euo pipefail
 
+# shellcheck source=version.sh
+source "$(dirname "${BASH_SOURCE[0]}")/version.sh"
+
 result=$1
 case "$result" in
 changed | unchanged) ;;
@@ -24,18 +27,8 @@ pr=$(gh pr list --repo "$TARGET_REPO" --head "$branch" --state all --json number
 read -r number state automerge <<<"$pr"
 
 # Only a branch whose tag parses as a version and is lower than ours is closed.
-version_re='^v?([0-9]+)\.([0-9]+)\.([0-9]+)$'
 older_than_current() {
-  local a b i
-  [[ $TAG =~ $version_re ]] || return 1
-  b=("${BASH_REMATCH[@]:1}")
-  [[ $1 =~ $version_re ]] || return 1
-  a=("${BASH_REMATCH[@]:1}")
-  for i in 0 1 2; do
-    ((10#${a[i]} < 10#${b[i]})) && return 0
-    ((10#${a[i]} > 10#${b[i]})) && return 1
-  done
-  return 1
+  version_older "$1" "$TAG"
 }
 
 supersede() {

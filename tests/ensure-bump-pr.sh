@@ -165,4 +165,10 @@ unset RESULT
 
 check "workflow passes the bump-pin result to ensure-bump-pr.sh unconditionally" "1" "$(grep -c 'ensure-bump-pr.sh "\$result"$' .github/workflows/bump-pin.yml)"
 
+setup
+echo '[{"number":8,"headRefName":"bump/life_manager_version-v0.3.18446744073709551617"},{"number":3,"headRefName":"bump/life_manager_version-v0.2.9"}]' >"$STATE/open.json"
+run
+check "Scenario: Only older bump PRs are superseded (very long number is newer, left alone)" "0" "$(grep -c '^gh pr close 8 ' <<<"$calls")"
+check "Scenario: Only older bump PRs are superseded (very long number: older still closed)" "1" "$(grep -c '^gh pr close 3 ' <<<"$calls")"
+
 exit "$fail"
