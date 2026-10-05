@@ -6,6 +6,13 @@ set -euo pipefail
 
 file=$1 variable=$2 tag=$3
 
+# The tag becomes a plain YAML scalar, so nothing that YAML would read as
+# a comment, quote, flow indicator or key separator may be in it.
+if [[ $tag == *[[:space:]\#\"\'{}\[\],\\]* || $tag == *: ]]; then
+  echo "bump-pin: $tag: not a safe YAML scalar" >&2
+  exit 1
+fi
+
 # A pre-release is never deployed.
 if [[ $tag == *-* ]]; then
   echo skipped
@@ -24,6 +31,14 @@ rewrite='s/^(\Q$ENV{BUMP_VAR}\E:\h+)(["\x27]?)[^"\x27\s#]+\2/$1$2$ENV{BUMP_TAG}$
 
 if ! perl -ne 'BEGIN { $f = 1 } $f = 0 if /^\Q$ENV{BUMP_VAR}\E:\h/; END { exit $f }' "$file"; then
   echo "bump-pin: $file: $variable not found" >&2
+  exit 1
+fi
+
+# The rewrite only understands a bare or simply quoted token; anything else
+# (empty, templated, comment only) would be left alone and reported unchanged.
+valid='^\Q$ENV{BUMP_VAR}\E:\h+(?:"[^"\\]+"|\x27[^\x27\\]+\x27|[^\s"\x27#{}\[\],&*!|>%@`:][^\s"\x27#]*)(?:\h+#.*|\h*)$'
+if ! perl -ne "next unless /^\\Q\$ENV{BUMP_VAR}\\E:\\h/; \$bad = 1 unless /$valid/; END { exit \$bad ? 1 : 0 }" "$file"; then
+  echo "bump-pin: $file: $variable has no plain or quoted value" >&2
   exit 1
 fi
 
