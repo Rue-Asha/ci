@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Fixture tests for scripts/ensure-bump-pr.sh: a local bare repo stands in for
+# origin and a stub `gh` stands in for GitHub.
+
+set -uo pipefail
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+script=$PWD/scripts/ensure-bump-pr.sh
+
+dir=$(mktemp -d)
+trap 'command rm -rf "$dir"' EXIT
+
+fail=0
+check() {
+  if [ "$2" = "$3" ]; then
+    echo "ok   $1"
+  else
+    echo "FAIL $1"
+    printf '  want: %s\n  got:  %s\n' "$2" "$3"
+    fail=1
+  fi
+}
+
+mkdir "$dir/bin"
+cat >"$dir/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "gh $*" >>"$STATE/calls"
+case "$1 $2" in
+"pr list")
+  if [[ " $* " == *" --head "* ]]; then cat "$STATE/head.json"; else cat "$STATE/open.json"; fi ;;
+"pr create")
+  [ -z "${FAIL_CREATE:-}" ] || { echo "HTTP 502" >&2; exit 1; }
+  echo https://github.test/pr/9 ;;
+esac
+STUB
+chmod +x "$dir/bin/gh"
+
+setup() {
+  export STATE=$dir/state
+  command rm -rf "$dir/origin.git" "$dir/target" "$STATE"
+  mkdir "$STATE"
+  echo '[]' >"$STATE/head.json"
+  echo '[]' >"$STATE/open.json"
+  git init -q --bare -b main "$dir/origin.git"
+  git clone -q "$dir/origin.git" "$dir/target" 2>/dev/null
+  (
+    cd "$dir/target" || exit 1
+    git config user.name t && git config user.email t@t
+    echo 'life_manager_version: v0.2.0' >vars.yml
+    git add vars.yml && git commit -q -m init && git push -q origin HEAD:main
+    git switch -q main 2>/dev/null
+  )
+  echo 'life_manager_version: v0.3.0' >"$dir/target/vars.yml"
+}
+
+run() {
+  out=$(cd "$dir/target" && PATH="$dir/bin:$PATH" TARGET_REPO=o/r APP=life-manager VARIABLE=life_manager_version TAG=v0.3.0 bash "$script" 2>"$dir/err")
+  rc=$?
+  calls=$(cat "$STATE/calls" 2>/dev/null || true)
+}
+branch_on_origin() { git -C "$dir/origin.git" rev-parse --verify -q refs/heads/bump/life_manager_version-v0.3.0 >/dev/null && echo yes || echo no; }
+
+setup
+run
+check "Scenario: A new tag is bumped (pushes branch)" "yes" "$(branch_on_origin)"
+check "Scenario: A new tag is bumped (opens PR with title)" "1" "$(grep -c '^gh pr create .*--title chore(life-manager): bump to v0.3.0' <<<"$calls")"
+check "Scenario: A new tag is bumped (auto-merge)" "1" "$(grep -c '^gh pr merge https://github.test/pr/9 .*--auto --squash' <<<"$calls")"
+check "Scenario: A new tag is bumped (commit message)" "chore(life-manager): bump to v0.3.0" "$(git -C "$dir/origin.git" log -1 --format=%s bump/life_manager_version-v0.3.0)"
+
+setup
+echo '[{"number":4,"state":"OPEN","autoMergeRequest":{"enabledAt":"x"}}]' >"$STATE/head.json"
+git -C "$dir/target" push -q origin HEAD:refs/heads/bump/life_manager_version-v0.3.0
+run
+check "Scenario: Branch or PR for the tag already exists (open, auto-merge on)" "0" "$(grep -cE '^gh pr (create|merge)' <<<"$calls")"
+check "Scenario: Branch or PR for the tag already exists (exit)" "0" "$rc"
+
+setup
+echo '[{"number":4,"state":"MERGED","autoMergeRequest":null}]' >"$STATE/head.json"
+run
+check "Scenario: Branch or PR for the tag already exists (merged)" "0" "$(grep -cE '^gh pr (create|merge)' <<<"$calls")"
+check "Scenario: Branch or PR for the tag already exists (merged, no push)" "no" "$(branch_on_origin)"
+
+setup
+FAIL_CREATE=1 run
+check "Scenario: A previous run stopped before the PR or auto-merge (create fails: exit)" "1" "$rc"
+check "Scenario: A previous run stopped before the PR or auto-merge (create fails: branch pushed)" "yes" "$(branch_on_origin)"
+git -C "$dir/target" switch -q main
+echo 'life_manager_version: v0.3.0' >"$dir/target/vars.yml"
+: >"$STATE/calls"
+run
+check "Scenario: A previous run stopped before the PR or auto-merge (rerun: exit)" "0" "$rc"
+check "Scenario: A previous run stopped before the PR or auto-merge (rerun: PR created, branch not recreated)" "1" "$(grep -c '^gh pr create' <<<"$calls")"
+check "Scenario: A previous run stopped before the PR or auto-merge (rerun: auto-merge)" "1" "$(grep -c '^gh pr merge' <<<"$calls")"
+
+setup
+echo '[{"number":4,"state":"OPEN","autoMergeRequest":null}]' >"$STATE/head.json"
+git -C "$dir/target" push -q origin HEAD:refs/heads/bump/life_manager_version-v0.3.0
+run
+check "Scenario: A previous run stopped before the PR or auto-merge (PR without auto-merge: no create)" "0" "$(grep -c '^gh pr create' <<<"$calls")"
+check "Scenario: A previous run stopped before the PR or auto-merge (PR without auto-merge: enabled)" "1" "$(grep -c '^gh pr merge 4 .*--auto --squash' <<<"$calls")"
+
+setup
+echo '[{"number":3,"headRefName":"bump/life_manager_version-v0.2.9"},{"number":9,"headRefName":"bump/life_manager_version-v0.3.0"},{"number":5,"headRefName":"bump/other_version-v1.0.0"},{"number":6,"headRefName":"feat/x"}]' >"$STATE/open.json"
+run
+check "Scenario: An older bump PR is still open (closes only the older one)" "1" "$(grep -c '^gh pr close' <<<"$calls")"
+check "Scenario: An older bump PR is still open (which)" "1" "$(grep -c '^gh pr close 3 .*--comment Superseded by https://github.test/pr/9' <<<"$calls")"
+
+exit "$fail"

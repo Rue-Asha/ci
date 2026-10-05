@@ -39,9 +39,12 @@ version variable in a target repo (default `Rue-Asha/Homelab-Managment`) to a
 release tag, pushes `bump/<variable>-<tag>`, opens a PR titled
 `chore(<app>): bump to <tag>`, enables squash auto-merge on it and closes older
 open `bump/<variable>-*` PRs. The edit is made by `scripts/bump-pin.sh`, tested
-by `tests/bump-pin.sh`. A pre-release tag (`v1.2.3-rc1`), a value that already
-equals the tag, and an existing branch or PR for the tag all end green without
-a new PR; a missing variable line fails the job.
+by `tests/bump-pin.sh`; the branch, PR and auto-merge steps are in
+`scripts/ensure-bump-pr.sh`, tested by `tests/ensure-bump-pr.sh`. A pre-release
+tag (`v1.2.3-rc1`), a value that already equals the tag, and a PR for the tag
+that is merged or already set to auto-merge end green without changes. A run
+that stopped half-way is completed by a re-run (missing PR or auto-merge is
+added); a missing file or variable line fails the job.
 
 | Input | |
 |---|---|

@@ -43,6 +43,7 @@ on:
         type: string
         required: true
       target_repo:
+        description: Repo the PR is opened in, owner/name
         type: string
         default: Rue-Asha/Homelab-Managment
     secrets:
@@ -105,27 +106,4 @@ jobs:
           echo "bump-pin: $result"
           [ "$result" = changed ] || exit 0
 
-          branch="bump/${VARIABLE}-${TAG}"
-          title="chore(${APP}): bump to ${TAG}"
-
-          if git ls-remote --exit-code --heads origin "$branch" >/dev/null ||
-            [ -n "$(gh pr list --repo "$TARGET_REPO" --head "$branch" --state all --json number --jq '.[].number')" ]; then
-            echo "bump-pin: $branch already exists, nothing to do"
-            exit 0
-          fi
-
-          git config user.name "homelab-bump[bot]"
-          git config user.email "homelab-bump[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git commit -am "$title"
-          git push origin "$branch"
-
-          url=$(gh pr create --repo "$TARGET_REPO" --head "$branch" --title "$title" \
-            --body "Automated bump of \`${VARIABLE}\` to \`${TAG}\`, opened by the release of ${APP}.")
-          gh pr merge "$url" --repo "$TARGET_REPO" --auto --squash
-
-          gh pr list --repo "$TARGET_REPO" --state open --json number,headRefName \
-            --jq ".[] | select(.headRefName | startswith(\"bump/${VARIABLE}-\") and . != \"${branch}\") | .number" |
-            while read -r old; do
-              gh pr close "$old" --repo "$TARGET_REPO" --comment "Superseded by ${url}"
-            done
+          bash ../ci/scripts/ensure-bump-pr.sh
