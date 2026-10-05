@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
-# Usage: ensure-bump-pr.sh   (in the target checkout, with the bumped file unstaged)
+# Usage: ensure-bump-pr.sh <bump-pin result>   (in the target checkout, with the bumped file unstaged)
 # Env: TARGET_REPO APP VARIABLE TAG, and GH_TOKEN for gh.
+# changed: the full run below. unchanged: main already pins the tag, so only
+# supersede for a merged PR (closing the older PR may have failed after the
+# merge). Anything else (skipped...) does nothing.
 # Brings branch bump/<variable>-<tag>, its PR and the PR's auto-merge to the
 # state a finished run leaves, doing only the steps that are still missing, so
 # a re-run after a partial failure completes it.
 
 set -euo pipefail
+
+result=$1
+case "$result" in
+changed | unchanged) ;;
+*) exit 0 ;;
+esac
 
 branch="bump/${VARIABLE}-${TAG}"
 title="chore(${APP}): bump to ${TAG}"
@@ -42,6 +51,10 @@ supersede() {
 # Runs on every invocation: closing the older PR may have failed in an earlier run.
 if [ "${state:-}" = MERGED ]; then
   supersede "$number"
+fi
+
+if [ "$result" = unchanged ]; then
+  exit 0
 fi
 
 if [ "${state:-}" = MERGED ] || [ "${state:-}" = CLOSED ]; then

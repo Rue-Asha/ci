@@ -109,6 +109,5 @@ jobs:
         run: |
           result=$(bash ../ci/scripts/bump-pin.sh "$FILE" "$VARIABLE" "$TAG")
           echo "bump-pin: $result"
-          [ "$result" = changed ] || exit 0  # unchanged, skipped (pre-release) and "skipped: <tag> is older ..." open no PR
 
-          bash ../ci/scripts/ensure-bump-pr.sh
+          bash ../ci/scripts/ensure-bump-pr.sh "$result"

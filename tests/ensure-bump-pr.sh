@@ -64,7 +64,7 @@ setup() {
 }
 
 run() {
-  out=$(cd "$dir/target" && PATH="$dir/bin:$PATH" TARGET_REPO=o/r APP=life-manager VARIABLE=life_manager_version TAG=v0.3.0 bash "$script" 2>"$dir/err")
+  out=$(cd "$dir/target" && PATH="$dir/bin:$PATH" TARGET_REPO=o/r APP=life-manager VARIABLE=life_manager_version TAG=v0.3.0 bash "$script" "${RESULT:-changed}" 2>"$dir/err")
   rc=$?
   calls=$(cat "$STATE/calls" 2>/dev/null || true)
 }
@@ -136,5 +136,33 @@ check "Scenario: Only older bump PRs are superseded (closes only the older, nume
 check "Scenario: Only older bump PRs are superseded (older closed)" "1" "$(grep -c '^gh pr close 3 ' <<<"$calls")"
 check "Scenario: Only older bump PRs are superseded (newer left alone)" "0" "$(grep -cE '^gh pr close (8|2) ' <<<"$calls")"
 check "Scenario: Only older bump PRs are superseded (unparseable branch left alone)" "0" "$(grep -cE '^gh pr close (7|6) ' <<<"$calls")"
+
+# The workflow hands the bump-pin.sh result to the script, so the decision is testable here.
+setup
+echo '[{"number":4,"state":"MERGED","autoMergeRequest":null}]' >"$STATE/head.json"
+echo '[{"number":3,"headRefName":"bump/life_manager_version-v0.2.9"},{"number":4,"headRefName":"bump/life_manager_version-v0.3.0"}]' >"$STATE/open.json"
+echo 'life_manager_version: v0.3.0' >"$dir/target/vars.yml"
+git -C "$dir/target" commit -q -am pinned
+RESULT=unchanged run
+check "Scenario: The current PR is already merged but an older one is still open (unchanged result: exit)" "0" "$rc"
+check "Scenario: The current PR is already merged but an older one is still open (unchanged result: older closed)" "1" "$(grep -c '^gh pr close 3 .*--comment Superseded by 4' <<<"$calls")"
+check "Scenario: The current PR is already merged but an older one is still open (unchanged result: no create, merge or push)" "00" "$(grep -cE '^gh pr (create|merge)' <<<"$calls")$(pushes)"
+
+setup
+echo '[{"number":3,"headRefName":"bump/life_manager_version-v0.2.9"}]' >"$STATE/open.json"
+RESULT=unchanged run
+check "Scenario: The value already equals the tag (unchanged result, no PR for the tag: nothing happens)" "00" "$(grep -cE '^gh pr (create|merge|close)' <<<"$calls")$(pushes)"
+check "Scenario: The value already equals the tag (unchanged result, no PR for the tag: exit)" "0" "$rc"
+
+setup
+for RESULT in skipped "skipped: v0.3.0 is older than the pinned v0.4.0"; do
+  : >"$STATE/calls"
+  export RESULT
+  run
+  check "Scenario: A tag older than the pinned version is not bumped (result '$RESULT': no gh call, no push)" "00" "$(grep -c . <<<"$calls" | tr -d '\n')$(pushes)"
+done
+unset RESULT
+
+check "workflow passes the bump-pin result to ensure-bump-pr.sh unconditionally" "1" "$(grep -c 'ensure-bump-pr.sh "\$result"$' .github/workflows/bump-pin.yml)"
 
 exit "$fail"
