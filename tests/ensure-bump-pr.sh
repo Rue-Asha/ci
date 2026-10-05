@@ -75,6 +75,8 @@ setup
 run
 check "Scenario: A new tag is bumped (pushes branch)" "yes" "$(branch_on_origin)"
 check "Scenario: A new tag is bumped (opens PR with title)" "1" "$(grep -c '^gh pr create .*--title chore(life-manager): bump to v0.3.0' <<<"$calls")"
+check "Scenario: A new tag is bumped (PR is made in the target repo from the branch)" "1" "$(grep -c '^gh pr create --repo o/r --head bump/life_manager_version-v0.3.0 ' <<<"$calls")"
+check "Scenario: A new tag is bumped (PR body names variable, tag and app)" "1" "$(grep -c -- '--body Automated bump of `life_manager_version` to `v0.3.0`, opened by the release of life-manager.' <<<"$calls")"
 check "Scenario: A new tag is bumped (auto-merge)" "1" "$(grep -c '^gh pr merge https://github.test/pr/9 .*--auto --squash' <<<"$calls")"
 check "Scenario: A new tag is bumped (pushed commit holds the bumped line)" "life_manager_version: v0.3.0" "$(git -C "$dir/origin.git" show bump/life_manager_version-v0.3.0:vars.yml)"
 check "Scenario: A new tag is bumped (commit message)" "chore(life-manager): bump to v0.3.0" "$(git -C "$dir/origin.git" log -1 --format=%s bump/life_manager_version-v0.3.0)"
@@ -82,9 +84,11 @@ check "Scenario: A new tag is bumped (commit message)" "chore(life-manager): bum
 setup
 echo '[{"number":4,"state":"OPEN","autoMergeRequest":{"enabledAt":"x"}}]' >"$STATE/head.json"
 git -C "$dir/target" push -q origin HEAD:refs/heads/bump/life_manager_version-v0.3.0
+seeded=$(pushes)
 run
 check "Scenario: Branch or PR for the tag already exists (open, auto-merge on)" "0" "$(grep -cE '^gh pr (create|merge)' <<<"$calls")"
 check "Scenario: Branch or PR for the tag already exists (exit)" "0" "$rc"
+check "Scenario: Branch or PR for the tag already exists (open, auto-merge on, no push)" "$seeded" "$(pushes)"
 
 setup
 echo '[{"number":4,"state":"MERGED","autoMergeRequest":null}]' >"$STATE/head.json"
