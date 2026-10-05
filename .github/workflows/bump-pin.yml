@@ -82,7 +82,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Check out the target
+      - name: Check out the target # zizmor: ignore[artipacked] ensure-bump-pr.sh pushes with the persisted App token; no artifact is uploaded
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target_repo }}
