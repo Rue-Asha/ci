@@ -152,4 +152,12 @@ for pair in 'v0.2.0|vnext' 'main|v0.3.0' 'v0.2|v0.3.0' 'v0.2.0|v0.3' 'v0.2.0|' '
   check "Scenario: A version that cannot be compared fails ($pin -> $tag: untouched)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
 done
 
+printf '%s\n' '---' 'life_manager_version: v0.2.0' 'life_manager_version: v0.2.0' >"$dir/vars.yml"
+cp "$dir/vars.yml" "$dir/before.yml"
+run life_manager_version v0.3.0
+check "Scenario: The variable is set more than once (exit)" "1" "$rc"
+check "Scenario: The variable is set more than once (stdout)" "" "$out"
+check "Scenario: The variable is set more than once (stderr)" "bump-pin: $dir/vars.yml: life_manager_version is set more than once" "$err"
+check "Scenario: The variable is set more than once (untouched)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
+
 exit "$fail"

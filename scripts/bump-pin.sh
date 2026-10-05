@@ -33,8 +33,14 @@ fi
 export BUMP_VAR=$variable BUMP_TAG=$tag
 rewrite='s/^(\Q$ENV{BUMP_VAR}\E:\h+)(["\x27]?)[^"\x27\s#]+\2/$1$2$ENV{BUMP_TAG}$2/'
 
-if ! perl -ne 'BEGIN { $f = 1 } $f = 0 if /^\Q$ENV{BUMP_VAR}\E:\h/; END { exit $f }' "$file"; then
+# Ansible takes the last of two keys while a rewrite of only the first would
+# leave it pinned, so a repeated key is an error rather than a guess.
+count=$(perl -ne '$n++ if /^\Q$ENV{BUMP_VAR}\E:\h/; END { print $n + 0 }' "$file")
+if [ "$count" -eq 0 ]; then
   echo "bump-pin: $file: $variable not found" >&2
+  exit 1
+elif [ "$count" -gt 1 ]; then
+  echo "bump-pin: $file: $variable is set more than once" >&2
   exit 1
 fi
 
