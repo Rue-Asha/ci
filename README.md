@@ -49,7 +49,7 @@ job. Jobs for the same variable run one at a time (`concurrency` group
 tag (`v1.2.3-rc1`), an older tag, a value that already equals the tag, and a PR for the tag
 that is merged or already set to auto-merge end green without changes. A run
 that stopped half-way is completed by a re-run (missing PR or auto-merge is
-added); a missing file or variable line fails the job.
+added; a merged PR with an older one still open is cleaned up even when the pin is already on `main`); a missing file, a missing or repeated variable line fails the job.
 
 | Input | |
 |---|---|
