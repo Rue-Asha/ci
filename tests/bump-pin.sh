@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Fixture tests for scripts/bump-pin.sh, one per unit-proofed scenario of the
+# release-bump spec.
+
+set -uo pipefail
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+dir=$(mktemp -d)
+trap 'command rm -rf "$dir"' EXIT
+
+fail=0
+check() {
+  if [ "$2" = "$3" ]; then
+    echo "ok   $1"
+  else
+    echo "FAIL $1"
+    printf '  want: %s\n  got:  %s\n' "$2" "$3"
+    fail=1
+  fi
+}
+
+fixture() {
+  printf '%s\n' '---' 'life_manager_version: v0.2.0' 'life_manager_port: 3000' 'other_version: v0.2.0' >"$dir/vars.yml"
+}
+
+run() {
+  out=$(bash scripts/bump-pin.sh "$dir/vars.yml" "$@" 2>"$dir/err")
+  rc=$?
+  err=$(<"$dir/err")
+}
+
+fixture
+cp "$dir/vars.yml" "$dir/before.yml"
+run life_manager_version v0.3.0
+check "Scenario: A new tag is bumped (stdout)" "changed" "$out"
+check "Scenario: A new tag is bumped (exit)" "0" "$rc"
+check "Scenario: A new tag is bumped (diff)" "2c2" "$(diff "$dir/before.yml" "$dir/vars.yml" | head -n1)"
+check "Scenario: A new tag is bumped (line)" "life_manager_version: v0.3.0" "$(sed -n 2p "$dir/vars.yml")"
+check "Scenario: A new tag is bumped (rest)" "$(sed 1d "$dir/before.yml" | sed 1d)" "$(sed 1,2d "$dir/vars.yml")"
+
+fixture
+run absent_version v0.3.0
+check "Scenario: The variable line is missing (exit)" "1" "$rc"
+check "Scenario: The variable line is missing (stderr)" "bump-pin: $dir/vars.yml: absent_version not found" "$err"
+check "Scenario: The variable line is missing (untouched)" "life_manager_version: v0.2.0" "$(sed -n 2p "$dir/vars.yml")"
+
+fixture
+cp "$dir/vars.yml" "$dir/before.yml"
+run life_manager_version v0.2.0
+check "Scenario: The value already equals the tag (stdout)" "unchanged" "$out"
+check "Scenario: The value already equals the tag (exit)" "0" "$rc"
+check "Scenario: The value already equals the tag (file)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
+
+fixture
+cp "$dir/vars.yml" "$dir/before.yml"
+run life_manager_version v1.2.3-rc1
+check "Scenario: A pre-release tag is not bumped (stdout)" "skipped" "$out"
+check "Scenario: A pre-release tag is not bumped (exit)" "0" "$rc"
+check "Scenario: A pre-release tag is not bumped (file)" "$(<"$dir/before.yml")" "$(<"$dir/vars.yml")"
+
+exit "$fail"
