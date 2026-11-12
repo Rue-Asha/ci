@@ -29,6 +29,10 @@ A ruleset requires the jobs as `security-baseline / workflow-lint`,
 `security-baseline / secret-scan` and `security-baseline / dependency-review`.
 Job names are part of the interface; renaming one is a major version.
 
+A private repo without GitHub Advanced Security cannot run dependency review.
+It turns the job off with `with: { dependency-review: false }`; the job then
+reports as skipped, which still satisfies the required check.
+
 The scanner binaries are pinned by version and SHA-256 inside the workflow.
 Dependabot does not bump those; update version and checksum together.
 

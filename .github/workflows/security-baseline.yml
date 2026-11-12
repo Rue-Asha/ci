@@ -18,6 +18,11 @@ name: security-baseline
 
 on:
   workflow_call:
+    inputs:
+      dependency-review:
+        description: Run dependency-review on pull requests. Private repos without GitHub Advanced Security cannot run it.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -103,7 +108,7 @@ jobs:
     runs-on: ubuntu-24.04
     # Reviews the PR's dependency diff, so there is nothing to review on push.
     # A skipped job satisfies a required check.
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && inputs.dependency-review
     steps:
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
